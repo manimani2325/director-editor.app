@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { db } from './firebase'
+import { db, firebaseConfig } from './firebase'
 import { ref, onValue, set, push, remove, update } from 'firebase/database'
 
 const ACCOUNTS = [
@@ -33,6 +33,11 @@ function borderColor(deadline) {
 }
 
 export default function App() {
+  if (!firebaseConfig) return <SetupScreen />
+  return <AppContent />
+}
+
+function AppContent() {
   const [screen, setScreen] = useState('splash')
   const [data, setData] = useState({ editors: [], accounts: {} })
   const [loading, setLoading] = useState(true)
@@ -345,6 +350,58 @@ function TaskModal({ task, onClose }) {
           {STATUS_LIST.map(s=><span key={s} className={`chip ${task.status===s?'active':''}`} onClick={()=>upd(s)}>{s}</span>)}
         </div>
         <button className="full" onClick={onClose}>閉じる</button>
+      </div>
+    </div>
+  )
+}
+
+function SetupScreen() {
+  const [form, setForm] = useState({
+    apiKey: '', authDomain: '', databaseURL: '',
+    projectId: '', storageBucket: '', messagingSenderId: '', appId: ''
+  })
+  const f = k => e => setForm(v => ({ ...v, [k]: e.target.value }))
+
+  function save() {
+    const missing = Object.entries(form).filter(([, v]) => !v.trim()).map(([k]) => k)
+    if (missing.length > 0) { alert('すべての項目を入力してください'); return }
+    localStorage.setItem('firebase_config', JSON.stringify(form))
+    window.location.reload()
+  }
+
+  const fields = [
+    ['apiKey',            'API Key'],
+    ['authDomain',        'Auth Domain'],
+    ['databaseURL',       'Database URL'],
+    ['projectId',         'Project ID'],
+    ['storageBucket',     'Storage Bucket'],
+    ['messagingSenderId', 'Messaging Sender ID'],
+    ['appId',             'App ID'],
+  ]
+
+  return (
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:'1.5rem'}}>
+      <div style={{width:'100%',maxWidth:480}}>
+        <div style={{textAlign:'center',marginBottom:'1.5rem'}}>
+          <p style={{fontSize:20,fontWeight:600,marginBottom:6}}>Firebase 設定</p>
+          <p style={{fontSize:13,color:'var(--text2)'}}>
+            Firebaseコンソール → プロジェクトの設定 → マイアプリ から値を取得してください
+          </p>
+        </div>
+        <div className="card">
+          {fields.map(([key, label]) => (
+            <div key={key} className="form-group">
+              <label className="form-label">{label}</label>
+              <input type="text" value={form[key]} onChange={f(key)} placeholder={label} />
+            </div>
+          ))}
+          <button className="primary full" style={{marginTop:4}} onClick={save}>
+            保存してアプリを起動
+          </button>
+        </div>
+        <p style={{fontSize:11,color:'var(--text3)',textAlign:'center',marginTop:8}}>
+          設定はブラウザのlocalStorageに保存されます
+        </p>
       </div>
     </div>
   )
