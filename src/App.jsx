@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { db, firebaseConfig } from './firebase'
+import { db, firebaseConfig, initError } from './firebase'
 import { ref, onValue, set, push, remove, update } from 'firebase/database'
 
 const ACCOUNTS = [
@@ -33,6 +33,7 @@ function borderColor(deadline) {
 }
 
 export default function App() {
+  if (initError) return <SetupScreen error={`Firebase初期化エラー: ${initError}\n\n設定値を確認して再入力してください。`} />
   if (!firebaseConfig) return <SetupScreen />
   return <AppContent />
 }
@@ -355,7 +356,7 @@ function TaskModal({ task, onClose }) {
   )
 }
 
-function SetupScreen() {
+function SetupScreen({ error }) {
   const [form, setForm] = useState({
     apiKey: '', authDomain: '', databaseURL: '',
     projectId: '', storageBucket: '', messagingSenderId: '', appId: ''
@@ -388,6 +389,11 @@ function SetupScreen() {
             Firebaseコンソール → プロジェクトの設定 → マイアプリ から値を取得してください
           </p>
         </div>
+        {error && (
+          <div style={{background:'var(--coral-light)',border:'0.5px solid var(--coral)',borderRadius:8,padding:'10px 14px',marginBottom:'1rem',fontSize:12,color:'var(--coral)',whiteSpace:'pre-wrap'}}>
+            {error}
+          </div>
+        )}
         <div className="card">
           {fields.map(([key, label]) => (
             <div key={key} className="form-group">

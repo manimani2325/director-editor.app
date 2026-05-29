@@ -22,7 +22,14 @@ function loadConfig() {
 export const firebaseConfig = loadConfig()
 
 export let db = null
+export let initError = null
+
 if (firebaseConfig) {
-  const app = initializeApp(firebaseConfig)
-  db = getDatabase(app)
+  try {
+    const app = initializeApp(firebaseConfig)
+    db = getDatabase(app)
+  } catch (e) {
+    initError = e.message
+    localStorage.removeItem('firebase_config')
+  }
 }
