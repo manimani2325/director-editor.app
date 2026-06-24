@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { ABILITIES, abilityById, LESSONS, lessonById, lessonsByAbility } from './data/skills'
 import { loadState, saveState, resetState, bumpStreak } from './lib/storage'
 import { review as reviewCard, dueLessonIds } from './lib/srs'
+import Practice from './Practice'
 
 // ── ルート ─────────────────────────────────────
 export default function App() {
@@ -33,6 +34,9 @@ export default function App() {
       <Header streak={state.streak.count} points={state.points} />
       <div className="container">
         {tab === 'home' && <Home state={state} onOpen={setActiveLesson} />}
+        {tab === 'practice' && (
+          <Practice onAward={pts => setState(s => ({ ...s, points: s.points + pts }))} />
+        )}
         {tab === 'map' && <SkillMap state={state} onOpen={setActiveLesson} />}
         {tab === 'dashboard' && (
           <Dashboard state={state} onReset={() => { resetState(); setState(loadState()) }} />
@@ -77,7 +81,8 @@ function Header({ streak, points }) {
 function Nav({ tab, setTab }) {
   const items = [
     { id: 'home', label: 'ホーム', icon: '🏠' },
-    { id: 'map', label: 'スキルマップ', icon: '🗺️' },
+    { id: 'practice', label: '実践', icon: '💬' },
+    { id: 'map', label: 'マップ', icon: '🗺️' },
     { id: 'dashboard', label: '記録', icon: '📊' },
   ]
   return (
