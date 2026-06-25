@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { ABILITIES, abilityById, LESSONS, lessonById, lessonsByAbility } from './data/skills'
 import { loadState, saveState, resetState, bumpStreak } from './lib/storage'
 import { review as reviewCard, dueLessonIds } from './lib/srs'
+import { onAuth, loadCloudState, saveCloudState, cloudConfigured, saveFirebaseConfig, signIn, signUp, signOutUser } from './lib/cloud'
 import Practice from './Practice'
 
 // ── ルート ─────────────────────────────────────
@@ -9,8 +10,29 @@ export default function App() {
   const [state, setState] = useState(loadState)
   const [tab, setTab] = useState('home')
   const [activeLesson, setActiveLesson] = useState(null) // lessonId | null
+  const [user, setUser] = useState(null)                 // Firebase ユーザー | null
+  const stateRef = useRef(state)
 
-  useEffect(() => { saveState(state) }, [state])
+  useEffect(() => { stateRef.current = state }, [state])
+
+  // ローカル保存（常時）＋クラウド保存（ログイン時）
+  useEffect(() => {
+    saveState(state)
+    if (user) saveCloudState(user.uid, state).catch(() => {})
+  }, [state, user])
+
+  // 認証状態の監視。ログイン時はクラウドの進捗を取り込み、なければ現在の進捗を初期同期。
+  useEffect(() => {
+    return onAuth(async u => {
+      setUser(u)
+      if (!u) return
+      try {
+        const cloud = await loadCloudState(u.uid)
+        if (cloud && cloud.profile) setState(cloud)
+        else await saveCloudState(u.uid, stateRef.current)
+      } catch {}
+    })
+  }, [])
 
   if (!state.profile) {
     return <Onboarding onDone={profile => setState(s => ({ ...s, profile }))} />
@@ -39,7 +61,11 @@ export default function App() {
         )}
         {tab === 'map' && <SkillMap state={state} onOpen={setActiveLesson} />}
         {tab === 'dashboard' && (
-          <Dashboard state={state} onReset={() => { resetState(); setState(loadState()) }} />
+          <Dashboard
+            state={state}
+            user={user}
+            onReset={() => { resetState(); setState(loadState()) }}
+          />
         )}
       </div>
       <Nav tab={tab} setTab={setTab} />
@@ -344,7 +370,7 @@ function SkillMap({ state, onOpen }) {
 }
 
 // ── ダッシュボード（記録） ─────────────────────
-function Dashboard({ state, onReset }) {
+function Dashboard({ state, user, onReset }) {
   const total = LESSONS.length
   const completed = Object.values(state.progress).filter(p => p.completed).length
   const correct = Object.values(state.progress).filter(p => p.correct).length
@@ -380,6 +406,8 @@ function Dashboard({ state, onReset }) {
         })}
       </div>
 
+      <AccountCard user={user} />
+
       <div className="card">
         <div className="section-title">設定</div>
         <button className="danger full" onClick={() => { if (confirm('学習データをすべて消去しますか？')) onReset() }}>
@@ -388,4 +416,97 @@ function Dashboard({ state, onReset }) {
       </div>
     </>
   )
+}
+
+// ── アカウント / クラウド同期 ───────────────────
+function AccountCard({ user }) {
+  const [email, setEmail] = useState('')
+  const [pw, setPw] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [cfgText, setCfgText] = useState('')
+
+  async function act(fn) {
+    setBusy(true); setErr('')
+    try { await fn(email, pw) } catch (e) { setErr(authMessage(e)) } finally { setBusy(false) }
+  }
+
+  if (!cloudConfigured) {
+    return (
+      <div className="card">
+        <div className="section-title">クラウド同期（複数端末で進捗を共有）</div>
+        <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 10 }}>
+          Firebase を設定すると、ログインして複数端末で進捗を同期できます。コンソールの設定オブジェクト（JSON）を貼り付けてください。
+        </p>
+        <textarea
+          value={cfgText}
+          onChange={e => setCfgText(e.target.value)}
+          rows={5}
+          placeholder='{"apiKey":"...","authDomain":"...","databaseURL":"...","projectId":"...","appId":"..."}'
+        />
+        <button
+          className="primary full"
+          style={{ marginTop: 8 }}
+          onClick={() => {
+            try {
+              const cfg = JSON.parse(cfgText)
+              if (!cfg.apiKey || !cfg.databaseURL) { setErr('apiKey と databaseURL が必要です'); return }
+              saveFirebaseConfig(cfg)
+              location.reload()
+            } catch { setErr('JSON の形式が正しくありません') }
+          }}
+        >
+          設定を保存して有効化
+        </button>
+        {err && <p style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{err}</p>}
+      </div>
+    )
+  }
+
+  if (user) {
+    return (
+      <div className="card">
+        <div className="section-title">クラウド同期</div>
+        <p style={{ fontSize: 13 }}>
+          <span className="tag tag-green">同期中</span> {user.email}
+        </p>
+        <p style={{ fontSize: 12, color: 'var(--text3)', margin: '6px 0 12px' }}>
+          進捗はこのアカウントに保存され、別の端末でログインすると引き継がれます。
+        </p>
+        <button className="full" onClick={() => signOutUser()}>ログアウト</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="card">
+      <div className="section-title">クラウド同期にログイン</div>
+      <div className="form-group">
+        <label className="form-label">メールアドレス</label>
+        <input type="text" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
+      </div>
+      <div className="form-group">
+        <label className="form-label">パスワード</label>
+        <input type="text" value={pw} onChange={e => setPw(e.target.value)} placeholder="6文字以上" />
+      </div>
+      <div className="grid2">
+        <button className="primary full" disabled={busy} onClick={() => act(signIn)}>ログイン</button>
+        <button className="full" disabled={busy} onClick={() => act(signUp)}>新規登録</button>
+      </div>
+      {err && <p style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{err}</p>}
+      <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 10 }}>
+        ※ Firebase コンソールで「メール/パスワード」認証を有効にしておく必要があります。
+      </p>
+    </div>
+  )
+}
+
+function authMessage(e) {
+  const code = e?.code || ''
+  if (code.includes('invalid-credential') || code.includes('wrong-password')) return 'メールまたはパスワードが違います'
+  if (code.includes('email-already-in-use')) return 'このメールは登録済みです。ログインしてください'
+  if (code.includes('weak-password')) return 'パスワードは6文字以上にしてください'
+  if (code.includes('invalid-email')) return 'メールアドレスの形式が正しくありません'
+  if (code.includes('operation-not-allowed')) return 'Firebaseでメール/パスワード認証が無効です。コンソールで有効にしてください'
+  return e?.message || 'エラーが発生しました'
 }

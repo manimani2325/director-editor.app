@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getDatabase } from 'firebase/database'
+import { getAuth } from 'firebase/auth'
 
 function loadConfig() {
   const env = {
@@ -22,7 +23,9 @@ function loadConfig() {
 export const firebaseConfig = loadConfig()
 
 export let db = null
+export let auth = null
 if (firebaseConfig) {
   const app = initializeApp(firebaseConfig)
   db = getDatabase(app)
+  auth = getAuth(app)
 }
